@@ -223,7 +223,6 @@ static int e82576_acquire_nvm(
     swmask = E1000_SWFW_EEP_SM;
     fwmask = E1000_SWFW_EEP_SM << 16;
 
-
     /*
      * The SW/FW synchronization register is protected by
      * the hardware semaphore.
@@ -275,51 +274,27 @@ static int e82576_acquire_nvm(
 /*
  * Release NVM software/firmware ownership.
  */
-
 static void e82576_release_nvm(
     struct e82576_device *dev)
 {
     u32 swfw;
-
     int ret;
-
 
     /*
      * We need the hardware semaphore again before
      * modifying SW_FW_SYNC.
      */
-
-    ret =
-        e82576_get_hw_semaphore(dev);
-
-
+    ret = e82576_get_hw_semaphore(dev);
     if (ret) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "Failed to reacquire NVM semaphore during release\n");
-
+        dev_err(&dev->pdev->dev, "Failed to reacquire NVM semaphore during release\n");
         return;
     }
 
-
-    swfw =
-        e82576_read_reg(
-            dev,
-            E1000_SW_FW_SYNC);
-
-
+    swfw = e82576_read_reg(dev, E1000_SW_FW_SYNC);
     swfw &= ~E1000_SWFW_EEP_SM;
 
-
-    e82576_write_reg(
-        dev,
-        E1000_SW_FW_SYNC,
-        swfw);
-
-
+    e82576_write_reg(dev, E1000_SW_FW_SYNC, swfw);
     e82576_flush(dev);
-
 
     e82576_put_hw_semaphore(dev);
 }
@@ -337,66 +312,32 @@ static int e82576_read_nvm_word(
     u16 *data)
 {
     u32 value;
-
     int timeout;
-
 
     /*
      * Start EERD operation.
      */
 
-    value =
-        E1000_EERD_START |
-        ((u32)address <<
-         E1000_EERD_ADDR_SHIFT);
+    value = E1000_EERD_START | ((u32)address << E1000_EERD_ADDR_SHIFT);
 
-
-    e82576_write_reg(
-        dev,
-        E1000_EERD,
-        value);
-
-
+    e82576_write_reg(dev, E1000_EERD, value);
     e82576_flush(dev);
-
 
     /*
      * Wait for DONE.
      */
 
-    for (timeout = 0;
-         timeout < 10000;
-         timeout++) {
-
-        value =
-            e82576_read_reg(
-                dev,
-                E1000_EERD);
-
-
+    for (timeout = 0; timeout < 10000; timeout++) {
+        value = e82576_read_reg(dev, E1000_EERD);
         if (value & E1000_EERD_DONE) {
-
-            *data =
-                (u16)(
-                    (value >>
-                     E1000_EERD_DATA_SHIFT) &
-                    0xffff);
-
-
+            *data = (u16)((value >> E1000_EERD_DATA_SHIFT) & 0xffff);
             return 0;
         }
-
 
         udelay(10);
     }
 
-
-    dev_err(
-        &dev->pdev->dev,
-        "NVM read timeout: address=0x%04x EERD=0x%08x\n",
-        address,
-        value);
-
+    dev_err(&dev->pdev->dev, "NVM read timeout: address=0x%04x EERD=0x%08x\n", address, value);
 
     return -ETIMEDOUT;
 }
@@ -418,47 +359,21 @@ static int e82576_read_mac_address(
     ret = e82576_acquire_nvm(dev);
 
     if (ret) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "Failed to acquire NVM: %d\n",
-            ret);
-
-
+        dev_err(&dev->pdev->dev, "Failed to acquire NVM: %d\n", ret);
         return ret;
     }
 
-
     for (i = 0; i < 3; i++) {
-
-        ret =
-            e82576_read_nvm_word(
-                dev,
-                i,
-                &word);
-
-
+        ret = e82576_read_nvm_word(dev, i, &word);
         if (ret) {
-
             e82576_release_nvm(dev);
-
             return ret;
         }
 
+        dev_info(&dev->pdev->dev, "NVM word %d = 0x%04x\n", i, word);
 
-        dev_info(
-            &dev->pdev->dev,
-            "NVM word %d = 0x%04x\n",
-            i,
-            word);
-
-
-        dev->mac_address[i * 2] =
-            word & 0xff;
-
-
-        dev->mac_address[i * 2 + 1] =
-            word >> 8;
+        dev->mac_address[i * 2] = word & 0xff;
+        dev->mac_address[i * 2 + 1] = word >> 8;
     }
 
 
@@ -672,9 +587,6 @@ static irqreturn_t e82576_msix_handler(
 
         if (icr & E1000_ICR_LSC) {
             ret = e82576_get_link_status(dev);
-
-            dev_info(&dev->pdev->dev, "LSC: link_up=%d ret=%d\n", dev->link_up, ret);
-
             if (!ret) {
                 if (dev->link_up) {
                     netif_carrier_on(dev->netdev);
@@ -1028,7 +940,6 @@ static void e82576_remove(
  * PCI DEVICE TABLE
  * ============================================================
  */
-
 static const struct pci_device_id e82576_pci_ids[] = 
 {
     {
