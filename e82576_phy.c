@@ -18,79 +18,40 @@ int e82576_read_phy(
     u16 *data)
 {
     u32 mdic;
-
     int timeout;
 
-
-    mdic =
-        ((u32)reg <<
-         E1000_MDIC_REG_SHIFT) |
-
-        ((u32)phy <<
-         E1000_MDIC_PHY_SHIFT) |
-
+    mdic = ((u32)reg << E1000_MDIC_REG_SHIFT) |
+        ((u32)phy << E1000_MDIC_PHY_SHIFT) |
         E1000_MDIC_OP_READ;
 
 
-    e82576_write_reg(
-        dev,
-        E1000_MDIC,
-        mdic);
-
-
+    e82576_write_reg(dev, E1000_MDIC, mdic);
     e82576_flush(dev);
 
-
-    for (timeout = 0;
-         timeout < 1000;
-         timeout++) {
-
-        mdic =
-            e82576_read_reg(
-                dev,
-                E1000_MDIC);
-
-
+    for (timeout = 0; timeout < 1000; timeout++) {
+        mdic = e82576_read_reg(dev, E1000_MDIC);
         if (mdic & E1000_MDIC_READY)
             break;
-
 
         udelay(10);
     }
 
-
     if (!(mdic & E1000_MDIC_READY)) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "PHY read timeout: phy=%u reg=%u MDIC=0x%08x\n",
-            phy,
-            reg,
-            mdic);
-
+        dev_err(&dev->pdev->dev, "PHY read timeout: phy=%u reg=%u MDIC=0x%08x\n",
+            phy, reg, mdic);
 
         return -ETIMEDOUT;
     }
 
 
     if (mdic & E1000_MDIC_ERROR) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "PHY read error: phy=%u reg=%u MDIC=0x%08x\n",
-            phy,
-            reg,
-            mdic);
-
+        dev_err(&dev->pdev->dev, "PHY read error: phy=%u reg=%u MDIC=0x%08x\n",
+            phy, reg, mdic);
 
         return -EIO;
     }
 
-
-    *data =
-        mdic &
-        E1000_MDIC_DATA_MASK;
-
+    *data = mdic & E1000_MDIC_DATA_MASK;
 
     return 0;
 }
@@ -109,75 +70,38 @@ static int e82576_write_phy(
     u16 data)
 {
     u32 mdic;
-
     int timeout;
 
-
-    mdic =
+    mdic = 
         data |
-
-        ((u32)reg <<
-         E1000_MDIC_REG_SHIFT) |
-
-        ((u32)phy <<
-         E1000_MDIC_PHY_SHIFT) |
-
+        ((u32)reg << E1000_MDIC_REG_SHIFT) |
+        ((u32)phy << E1000_MDIC_PHY_SHIFT) |
         E1000_MDIC_OP_WRITE;
 
-
-    e82576_write_reg(
-        dev,
-        E1000_MDIC,
-        mdic);
-
-
+    e82576_write_reg(dev, E1000_MDIC, mdic);
     e82576_flush(dev);
 
-
-    for (timeout = 0;
-         timeout < 1000;
-         timeout++) {
-
-        mdic =
-            e82576_read_reg(
-                dev,
-                E1000_MDIC);
-
-
+    for (timeout = 0; timeout < 1000; timeout++) {
+        mdic = e82576_read_reg(dev, E1000_MDIC);
         if (mdic & E1000_MDIC_READY)
             break;
-
 
         udelay(10);
     }
 
-
     if (!(mdic & E1000_MDIC_READY)) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "PHY write timeout: phy=%u reg=%u\n",
-            phy,
-            reg);
-
+        dev_err(&dev->pdev->dev, "PHY write timeout: phy=%u reg=%u\n",
+            phy, reg);
 
         return -ETIMEDOUT;
     }
 
-
     if (mdic & E1000_MDIC_ERROR) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "PHY write error: phy=%u reg=%u MDIC=0x%08x\n",
-            phy,
-            reg,
-            mdic);
-
+        dev_err(&dev->pdev->dev, "PHY write error: phy=%u reg=%u MDIC=0x%08x\n",
+            phy, reg, mdic);
 
         return -EIO;
     }
-
 
     return 0;
 }
@@ -197,35 +121,17 @@ static int e82576_find_phy(
 
     int ret;
 
-
     /*
      * Normal 82576 copper PHY address.
      */
 
-    ret =
-        e82576_read_phy(
-            dev,
-            1,
-            PHY_REG_ID1,
-            &id1);
-
-
+    ret = e82576_read_phy(dev, 1, PHY_REG_ID1, &id1);
     if (!ret) {
-
         dev->phy_address = 1;
 
-
-        ret =
-            e82576_read_phy(
-                dev,
-                1,
-                PHY_REG_ID2,
-                &id2);
-
-
+        ret = e82576_read_phy(dev, 1, PHY_REG_ID2, &id2);
         if (ret)
             return ret;
-
 
         goto found;
     }
@@ -234,85 +140,41 @@ static int e82576_find_phy(
     /*
      * Fallback scan.
      */
+    dev_info(&dev->pdev->dev, "PHY read at address 1 failed, scanning...\n");
 
-    dev_info(
-        &dev->pdev->dev,
-        "PHY read at address 1 failed, scanning...\n");
-
-
-    for (dev->phy_address = 1;
-         dev->phy_address < 32;
-         dev->phy_address++) {
-
-        ret =
-            e82576_read_phy(
-                dev,
-                dev->phy_address,
-                PHY_REG_ID1,
-                &id1);
-
-
+    for (dev->phy_address = 1; dev->phy_address < 32; dev->phy_address++) {
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_REG_ID1, &id1);
         if (ret)
             continue;
 
-
-        if (id1 == 0xffff ||
-            id1 == 0x0000)
+        if (id1 == 0xffff || id1 == 0x0000)
             continue;
 
-
-        ret =
-            e82576_read_phy(
-                dev,
-                dev->phy_address,
-                PHY_REG_ID2,
-                &id2);
-
-
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_REG_ID2, &id2);
         if (!ret)
             goto found;
     }
 
-
     return -ENODEV;
-
 
 found:
 
     dev->phy_id1 = id1;
-
     dev->phy_id2 = id2;
 
-
-    dev_info(
-        &dev->pdev->dev,
-        "PHY found at address %u\n",
-        dev->phy_address);
-
-
-    dev_info(
-        &dev->pdev->dev,
-        "  PHY ID1 = 0x%04x\n",
-        dev->phy_id1);
-
-
-    dev_info(
-        &dev->pdev->dev,
-        "  PHY ID2 = 0x%04x\n",
-        dev->phy_id2);
-
+    dev_info(&dev->pdev->dev, "PHY found at address %u\n", dev->phy_address);
+    dev_info(&dev->pdev->dev, "  PHY ID1 = 0x%04x\n", dev->phy_id1);
+    dev_info(&dev->pdev->dev, "  PHY ID2 = 0x%04x\n", dev->phy_id2);
 
     return 0;
 }
-
 
 static int e82576_reset_phy_hw(struct e82576_device *dev)
 {
     u32 ctrl;
     int timeout;
 
-    dev_info(&dev->pdev->dev,
-             "Resetting 82576 PHY through CTRL.PHY_RST\n");
+    dev_info(&dev->pdev->dev, "Resetting 82576 PHY through CTRL.PHY_RST\n");
 
     ctrl = e82576_read_reg(dev, E1000_CTRL);
 
@@ -344,15 +206,8 @@ static int e82576_reset_phy_hw(struct e82576_device *dev)
         u16 id1;
         u16 id2;
 
-        if (!e82576_read_phy(dev,
-                             dev->phy_address,
-                             PHY_REG_ID1,
-                             &id1) &&
-            !e82576_read_phy(dev,
-                             dev->phy_address,
-                             PHY_REG_ID2,
-                             &id2)) {
-
+        if (!e82576_read_phy(dev, dev->phy_address, PHY_REG_ID1, &id1) &&
+            !e82576_read_phy(dev, dev->phy_address, PHY_REG_ID2, &id2)) {
             if (id1 != 0xffff &&
                 id1 != 0x0000 &&
                 id2 != 0xffff &&
@@ -401,24 +256,15 @@ int e82576_get_link_status(struct e82576_device *dev)
     /*
      * BMSR is latched-low.
      */
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMSR,
-                          &bmsr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMSR, &bmsr);
     if (ret)
         return ret;
 
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMSR,
-                          &bmsr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMSR, &bmsr);
     if (ret)
         return ret;
 
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMCR,
-                          &bmcr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
     if (ret)
         return ret;
 
@@ -426,7 +272,6 @@ int e82576_get_link_status(struct e82576_device *dev)
     autoneg = !!(bmcr & BMCR_ANENABLE);
 
     if (!link) {
-
         dev->link_up = false;
         dev->link_speed = SPEED_UNKNOWN;
         dev->full_duplex = false;
@@ -434,8 +279,7 @@ int e82576_get_link_status(struct e82576_device *dev)
         if (dev->netdev)
             netif_carrier_off(dev->netdev);
 
-        dev_info(&dev->pdev->dev,
-                 "Link: DOWN\n");
+        dev_info(&dev->pdev->dev, "Link: DOWN\n");
 
         return 0;
     }
@@ -445,27 +289,16 @@ int e82576_get_link_status(struct e82576_device *dev)
      * Autonegotiated link
      * --------------------------------------------------------
      */
-
     if (autoneg) {
-
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_ANAR,
-                              &anar);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_ANAR, &anar);
         if (ret)
             return ret;
 
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_ANLPAR,
-                              &anlpar);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_ANLPAR, &anlpar);
         if (ret)
             return ret;
 
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_STAT1000,
-                              &stat1000);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_STAT1000, &stat1000);
         if (ret)
             return ret;
 
@@ -473,7 +306,6 @@ int e82576_get_link_status(struct e82576_device *dev)
          * 1000BASE-T full duplex.
          */
         if (stat1000 & LPA_1000FULL) {
-
             speed = SPEED_1000;
             full_duplex = true;
         }
@@ -481,9 +313,7 @@ int e82576_get_link_status(struct e82576_device *dev)
         /*
          * 100BASE-TX full.
          */
-        else if ((anar & ADVERTISE_100FULL) &&
-                 (anlpar & LPA_100FULL)) {
-
+        else if ((anar & ADVERTISE_100FULL) && (anlpar & LPA_100FULL)) {
             speed = SPEED_100;
             full_duplex = true;
         }
@@ -491,9 +321,7 @@ int e82576_get_link_status(struct e82576_device *dev)
         /*
          * 100BASE-TX half.
          */
-        else if ((anar & ADVERTISE_100HALF) &&
-                 (anlpar & LPA_100HALF)) {
-
+        else if ((anar & ADVERTISE_100HALF) && (anlpar & LPA_100HALF)) {
             speed = SPEED_100;
             full_duplex = false;
         }
@@ -501,9 +329,7 @@ int e82576_get_link_status(struct e82576_device *dev)
         /*
          * 10BASE-T full.
          */
-        else if ((anar & ADVERTISE_10FULL) &&
-                 (anlpar & LPA_10FULL)) {
-
+        else if ((anar & ADVERTISE_10FULL) && (anlpar & LPA_10FULL)) {
             speed = SPEED_10;
             full_duplex = true;
         }
@@ -511,9 +337,7 @@ int e82576_get_link_status(struct e82576_device *dev)
         /*
          * 10BASE-T half.
          */
-        else if ((anar & ADVERTISE_10HALF) &&
-                 (anlpar & LPA_10HALF)) {
-
+        else if ((anar & ADVERTISE_10HALF) && (anlpar & LPA_10HALF)) {
             speed = SPEED_10;
             full_duplex = false;
         }
@@ -524,9 +348,7 @@ int e82576_get_link_status(struct e82576_device *dev)
      * Forced link
      * --------------------------------------------------------
      */
-
     else {
-
         if (bmcr & BMCR_SPEED100)
             speed = SPEED_100;
         else
@@ -542,14 +364,10 @@ int e82576_get_link_status(struct e82576_device *dev)
     if (dev->netdev)
         netif_carrier_on(dev->netdev);
 
-    dev_info(&dev->pdev->dev,
-             "Link: UP\n"
-             "  Speed: %d Mbps\n"
-             "  Duplex: %s\n"
-             "  Autonegotiation: %s\n",
-             speed,
-             full_duplex ? "Full" : "Half",
-             autoneg ? "enabled" : "disabled");
+    dev_info(&dev->pdev->dev, "Link: UP\n");
+    dev_info(&dev->pdev->dev, "Speed: %d Mbps\n", speed);
+    dev_info(&dev->pdev->dev, "Duplex: %s\n", full_duplex ? "Full" : "Half");
+    dev_info(&dev->pdev->dev, "Autonegotiation: %s\n", autoneg ? "enabled" : "disabled");
 
     return 0;
 }
@@ -561,8 +379,7 @@ static int e82576_configure_phy(struct e82576_device *dev)
     u16 bmcr;
     int ret;
 
-    dev_info(&dev->pdev->dev,
-             "Configuring PHY for auto-negotiation\n");
+    dev_info(&dev->pdev->dev, "Configuring PHY for auto-negotiation\n");
 
     /*
      * --------------------------------------------------------
@@ -570,49 +387,34 @@ static int e82576_configure_phy(struct e82576_device *dev)
      * --------------------------------------------------------
      */
 
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMCR,
-                          &bmcr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
     if (ret)
         return ret;
 
-    dev_info(&dev->pdev->dev,
-             "Initial BMCR = 0x%04x\n",
-             bmcr);
+    dev_info(&dev->pdev->dev, "Initial BMCR = 0x%04x\n", bmcr);
 
     /*
      * Remove states that prevent normal operation.
      */
-    bmcr &= ~(BMCR_PDOWN |
-              BMCR_ISOLATE |
-              BMCR_LOOPBACK);
+    bmcr &= ~(BMCR_PDOWN | BMCR_ISOLATE | BMCR_LOOPBACK);
 
     /*
      * Enable auto-negotiation.
      */
     bmcr |= BMCR_ANENABLE;
 
-    ret = e82576_write_phy(dev,
-                           dev->phy_address,
-                           PHY_BMCR,
-                           bmcr);
+    ret = e82576_write_phy(dev, dev->phy_address, PHY_BMCR, bmcr);
     if (ret)
         return ret;
 
     /*
      * Read back.
      */
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMCR,
-                          &bmcr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
     if (ret)
         return ret;
 
-    dev_info(&dev->pdev->dev,
-             "BMCR after enabling PHY = 0x%04x\n",
-             bmcr);
+    dev_info(&dev->pdev->dev, "BMCR after enabling PHY = 0x%04x\n", bmcr);
 
     /*
      * --------------------------------------------------------
@@ -620,10 +422,7 @@ static int e82576_configure_phy(struct e82576_device *dev)
      * --------------------------------------------------------
      */
 
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_ANAR,
-                          &anar);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_ANAR, &anar);
     if (ret)
         return ret;
 
@@ -638,10 +437,7 @@ static int e82576_configure_phy(struct e82576_device *dev)
             ADVERTISE_100HALF |
             ADVERTISE_100FULL;
 
-    ret = e82576_write_phy(dev,
-                           dev->phy_address,
-                           PHY_ANAR,
-                           anar);
+    ret = e82576_write_phy(dev, dev->phy_address, PHY_ANAR, anar);
     if (ret)
         return ret;
 
@@ -651,22 +447,14 @@ static int e82576_configure_phy(struct e82576_device *dev)
      * --------------------------------------------------------
      */
 
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_CTRL1000,
-                          &ctrl1000);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_CTRL1000, &ctrl1000);
     if (ret)
         return ret;
 
-    ctrl1000 &= ~(ADVERTISE_1000FULL |
-                  ADVERTISE_1000HALF);
-
+    ctrl1000 &= ~(ADVERTISE_1000FULL | ADVERTISE_1000HALF);
     ctrl1000 |= ADVERTISE_1000FULL;
 
-    ret = e82576_write_phy(dev,
-                           dev->phy_address,
-                           PHY_CTRL1000,
-                           ctrl1000);
+    ret = e82576_write_phy(dev, dev->phy_address, PHY_CTRL1000, ctrl1000);
     if (ret)
         return ret;
 
@@ -676,10 +464,7 @@ static int e82576_configure_phy(struct e82576_device *dev)
      * --------------------------------------------------------
      */
 
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMCR,
-                          &bmcr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
     if (ret)
         return ret;
 
@@ -689,30 +474,20 @@ static int e82576_configure_phy(struct e82576_device *dev)
     /*
      * Make absolutely sure PHY is not powered down.
      */
-    bmcr &= ~(BMCR_PDOWN |
-              BMCR_ISOLATE |
-              BMCR_LOOPBACK);
+    bmcr &= ~(BMCR_PDOWN | BMCR_ISOLATE | BMCR_LOOPBACK);
 
-    ret = e82576_write_phy(dev,
-                           dev->phy_address,
-                           PHY_BMCR,
-                           bmcr);
+    ret = e82576_write_phy(dev, dev->phy_address, PHY_BMCR, bmcr);
     if (ret)
         return ret;
 
     /*
      * Read back.
      */
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMCR,
-                          &bmcr);
+    ret = e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
     if (ret)
         return ret;
 
-    dev_info(&dev->pdev->dev,
-             "PHY auto-negotiation restarted: BMCR=0x%04x\n",
-             bmcr);
+    dev_info(&dev->pdev->dev, "PHY auto-negotiation restarted: BMCR=0x%04x\n", bmcr);
 
     return 0;
 }
@@ -730,18 +505,13 @@ static int e82576_wait_for_autoneg(struct e82576_device *dev)
     int ret;
     int timeout;
 
-    dev_info(&dev->pdev->dev,
-             "Waiting for PHY auto-negotiation...\n");
+    dev_info(&dev->pdev->dev, "Waiting for PHY auto-negotiation...\n");
 
     for (timeout = 0; timeout < 50; timeout++) {
-
         /*
          * BMCR
          */
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_BMCR,
-                              &bmcr);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
         if (ret)
             return ret;
 
@@ -749,51 +519,33 @@ static int e82576_wait_for_autoneg(struct e82576_device *dev)
          * BMSR must be read twice because link status and
          * related status bits can be latched-low.
          */
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_BMSR,
-                              &bmsr);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_BMSR, &bmsr);
         if (ret)
             return ret;
 
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_BMSR,
-                              &bmsr);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_BMSR, &bmsr);
         if (ret)
             return ret;
 
         /*
          * Advertisement.
          */
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_ANAR,
-                              &anar);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_ANAR, &anar);
         if (ret)
             return ret;
 
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_ANLPAR,
-                              &anlpar);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_ANLPAR, &anlpar);
         if (ret)
             return ret;
 
         /*
          * 1000BASE-T.
          */
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_CTRL1000,
-                              &ctrl1000);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_CTRL1000, &ctrl1000);
         if (ret)
             return ret;
 
-        ret = e82576_read_phy(dev,
-                              dev->phy_address,
-                              PHY_STAT1000,
-                              &stat1000);
+        ret = e82576_read_phy(dev, dev->phy_address, PHY_STAT1000, &stat1000);
         if (ret)
             return ret;
 
@@ -817,11 +569,9 @@ static int e82576_wait_for_autoneg(struct e82576_device *dev)
          * Auto-negotiation complete.
          */
         if (bmsr & BMSR_ANEGCOMPLETE) {
-
-            dev_info(&dev->pdev->dev,
-                     "====================================\n"
-                     "PHY AUTO-NEGOTIATION COMPLETE\n"
-                     "====================================\n");
+            dev_info(&dev->pdev->dev, "====================================\n");
+            dev_info(&dev->pdev->dev, "PHY AUTO-NEGOTIATION COMPLETE\n");
+            dev_info(&dev->pdev->dev, "====================================\n");
 
             return 0;
         }
@@ -829,106 +579,9 @@ static int e82576_wait_for_autoneg(struct e82576_device *dev)
         msleep(100);
     }
 
-    dev_warn(&dev->pdev->dev,
-             "PHY auto-negotiation timeout\n");
+    dev_warn(&dev->pdev->dev, "PHY auto-negotiation timeout\n");
 
     return -ETIMEDOUT;
-}
-
-static int e82576_check_link(struct e82576_device *dev)
-{
-    u16 bmsr;
-    u16 anlpar;
-    u16 stat1000;
-    u16 ctrl1000;
-
-    int ret;
-
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMSR,
-                          &bmsr);
-    if (ret)
-        return ret;
-
-    /*
-     * BMSR link status is latched low.
-     */
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_BMSR,
-                          &bmsr);
-    if (ret)
-        return ret;
-
-    if (!(bmsr & BMSR_LSTATUS)) {
-
-        dev->link_up = false;
-        dev->link_speed = SPEED_UNKNOWN;
-        dev->full_duplex = false;
-
-        dev_info(&dev->pdev->dev,
-                 "Link: DOWN\n");
-
-        return 0;
-    }
-
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_ANLPAR,
-                          &anlpar);
-    if (ret)
-        return ret;
-
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_STAT1000,
-                          &stat1000);
-    if (ret)
-        return ret;
-
-    ret = e82576_read_phy(dev,
-                          dev->phy_address,
-                          PHY_CTRL1000,
-                          &ctrl1000);
-    if (ret)
-        return ret;
-
-    /*
-     * 1000BASE-T full duplex.
-     */
-    if ((stat1000 & LPA_1000FULL) &&
-        (ctrl1000 & ADVERTISE_1000FULL)) {
-
-        dev->link_speed = SPEED_1000;
-        dev->full_duplex = true;
-    }
-    else if (anlpar & LPA_100FULL) {
-
-        dev->link_speed = SPEED_100;
-        dev->full_duplex = true;
-    }
-    else if (anlpar & LPA_10FULL) {
-
-        dev->link_speed = SPEED_10;
-        dev->full_duplex = true;
-    }
-    else {
-
-        dev->link_speed = SPEED_UNKNOWN;
-        dev->full_duplex = false;
-    }
-
-    dev->link_up = true;
-
-    dev_info(&dev->pdev->dev,
-             "Link: UP\n"
-             "  Speed: %d Mbps\n"
-             "  Duplex: %s\n",
-             dev->link_speed,
-             dev->full_duplex ? "Full" : "Half");
-
-    return 0;
 }
 
 void e82576_dump_phy_status(struct e82576_device *dev)
@@ -941,27 +594,14 @@ void e82576_dump_phy_status(struct e82576_device *dev)
     u16 stat1000 = 0;
     u32 status = e82576_read_reg(dev, E1000_STATUS);
 
-    dev_info(&dev->pdev->dev,
-            "MAC LINK: STATUS=0x%08x LU=%d\n",
-            status,
-            !!(status & E1000_STATUS_LU));
-    e82576_read_phy(dev, dev->phy_address,
-                    PHY_BMCR, &bmcr);
-
-    e82576_read_phy(dev, dev->phy_address,
-                    PHY_BMSR, &bmsr);
-
-    e82576_read_phy(dev, dev->phy_address,
-                    PHY_ANAR, &anar);
-
-    e82576_read_phy(dev, dev->phy_address,
-                    PHY_ANLPAR, &anlpar);
-
-    e82576_read_phy(dev, dev->phy_address,
-                    PHY_CTRL1000, &ctrl1000);
-
-    e82576_read_phy(dev, dev->phy_address,
-                    PHY_STAT1000, &stat1000);
+    dev_info(&dev->pdev->dev, "MAC LINK: STATUS=0x%08x LU=%d\n", 
+        status, !!(status & E1000_STATUS_LU));
+    e82576_read_phy(dev, dev->phy_address, PHY_BMCR, &bmcr);
+    e82576_read_phy(dev, dev->phy_address, PHY_BMSR, &bmsr);
+    e82576_read_phy(dev, dev->phy_address, PHY_ANAR, &anar);
+    e82576_read_phy(dev, dev->phy_address, PHY_ANLPAR, &anlpar);
+    e82576_read_phy(dev, dev->phy_address, PHY_CTRL1000, &ctrl1000);
+    e82576_read_phy(dev, dev->phy_address, PHY_STAT1000, &stat1000);
 
     dev_info(&dev->pdev->dev,
              "\n"
@@ -991,21 +631,17 @@ int e82576_init_phy(struct e82576_device *dev)
 {
     int ret;
 
-    dev_info(&dev->pdev->dev,
-             "Initializing PHY\n");
+    dev_info(&dev->pdev->dev, "Initializing PHY\n");
 
     /*
      * --------------------------------------------------------
      * Discover PHY
      * --------------------------------------------------------
      */
-
     ret = e82576_find_phy(dev);
 
     if (ret) {
-        dev_err(&dev->pdev->dev,
-                "PHY discovery failed: %d\n",
-                ret);
+        dev_err(&dev->pdev->dev, "PHY discovery failed: %d\n", ret);
         return ret;
     }
 
@@ -1017,8 +653,7 @@ int e82576_init_phy(struct e82576_device *dev)
      * --------------------------------------------------------
      */
 
-    dev_info(&dev->pdev->dev,
-             "Skipping Clause-22 BMCR PHY reset\n");
+    dev_info(&dev->pdev->dev, "Skipping Clause-22 BMCR PHY reset\n");
 
     msleep(100);
 
@@ -1031,9 +666,7 @@ int e82576_init_phy(struct e82576_device *dev)
     ret = e82576_configure_phy(dev);
 
     if (ret) {
-        dev_err(&dev->pdev->dev,
-                "PHY configuration failed: %d\n",
-                ret);
+        dev_err(&dev->pdev->dev, "PHY configuration failed: %d\n", ret);
         return ret;
     }
 
@@ -1043,8 +676,7 @@ int e82576_init_phy(struct e82576_device *dev)
      * --------------------------------------------------------
      */
 
-    dev_info(&dev->pdev->dev,
-             "PHY state immediately after configuration:\n");
+    dev_info(&dev->pdev->dev, "PHY state immediately after configuration:\n");
 
     e82576_dump_phy_status(dev);
 
@@ -1058,8 +690,7 @@ int e82576_init_phy(struct e82576_device *dev)
 
     if (ret == -ETIMEDOUT) {
 
-        dev_warn(&dev->pdev->dev,
-                 "PHY auto-negotiation did not complete\n");
+        dev_warn(&dev->pdev->dev, "PHY auto-negotiation did not complete\n");
 
         e82576_dump_phy_status(dev);
 
@@ -1071,23 +702,18 @@ int e82576_init_phy(struct e82576_device *dev)
     }
 
     if (ret) {
-        dev_err(&dev->pdev->dev,
-                "PHY auto-negotiation access failed: %d\n",
-                ret);
+        dev_err(&dev->pdev->dev, "PHY auto-negotiation access failed: %d\n", ret);
         return ret;
     }
 
     ret = e82576_get_link_status(dev);
 
     if (ret) {
-        dev_err(&dev->pdev->dev,
-                "PHY status read failed: %d\n",
-                ret);
+        dev_err(&dev->pdev->dev, "PHY status read failed: %d\n", ret);
         return ret;
     }
 
-    dev_info(&dev->pdev->dev,
-             "PHY initialization complete\n");
+    dev_info(&dev->pdev->dev, "PHY initialization complete\n");
 
     return 0;
 }
