@@ -1,4 +1,4 @@
-#include "e82576_phy.h"
+#include "e82576.h"
 
 #include <linux/delay.h>
 #include <linux/errno.h>
@@ -63,7 +63,7 @@ int e82576_read_phy(
  * ============================================================
  */
 
-static int e82576_write_phy(
+int e82576_write_phy(
     struct e82576_device *dev,
     u8 phy,
     u8 reg,
@@ -113,7 +113,7 @@ static int e82576_write_phy(
  * ============================================================
  */
 
-static int e82576_find_phy(
+int e82576_find_phy(
     struct e82576_device *dev)
 {
     u16 id1;
@@ -169,7 +169,7 @@ found:
     return 0;
 }
 
-static int e82576_reset_phy_hw(struct e82576_device *dev)
+int e82576_reset_phy_hw(struct e82576_device *dev)
 {
     u32 ctrl;
     int timeout;
@@ -372,7 +372,7 @@ int e82576_get_link_status(struct e82576_device *dev)
     return 0;
 }
 
-static int e82576_configure_phy(struct e82576_device *dev)
+int e82576_configure_phy(struct e82576_device *dev)
 {
     u16 anar;
     u16 ctrl1000;
@@ -493,7 +493,7 @@ static int e82576_configure_phy(struct e82576_device *dev)
 }
 
 
-static int e82576_wait_for_autoneg(struct e82576_device *dev)
+int e82576_wait_for_autoneg(struct e82576_device *dev)
 {
     u16 bmcr;
     u16 bmsr;

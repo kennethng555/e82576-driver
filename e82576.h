@@ -162,6 +162,38 @@
 #define E1000_MANC                     0x05820
 #define E1000_MANC_BLK_PHY_RST_ON_IDE  BIT(18)
 
+
+/*
+ * ============================================================
+ * TX/RX DESCRIPTORS
+ * ============================================================
+ */
+
+#define E82576_NUM_TX_DESC       64
+#define E82576_NUM_RX_DESC       64
+#define E82576_RX_BUFFER_SIZE    2048
+
+
+/*
+ * Software state associated with a TX descriptor.
+ */
+
+struct e82576_tx_buffer {
+    struct sk_buff *skb;
+    dma_addr_t dma;
+};
+
+
+/*
+ * Software state associated with an RX descriptor.
+ */
+
+struct e82576_rx_buffer {
+    struct sk_buff *skb;
+    dma_addr_t dma;
+};
+
+
 /*
  * ============================================================
  * DEVICE STRUCTURE
@@ -195,6 +227,7 @@ struct e82576_device {
     u16 phy_id1;
     u16 phy_id2;
 
+
     /*
      * Link.
      */
@@ -203,6 +236,7 @@ struct e82576_device {
     int link_speed;
     bool full_duplex;
 
+
     /*
      * MSI-X.
      */
@@ -210,18 +244,96 @@ struct e82576_device {
     int num_msix_vectors;
     int msix_irq;
     bool msix_enabled;
+
+
+    /*
+     * TX ring.
+     */
+
+    struct e82576_tx_desc *tx_ring;
+    dma_addr_t tx_ring_dma;
+
+    struct e82576_tx_buffer tx_buffer[E82576_NUM_TX_DESC];
+
+    u16 tx_next_to_use;
+    u16 tx_next_to_clean;
+
+
+    /*
+     * RX ring.
+     */
+
+    struct e82576_rx_desc *rx_ring;
+    dma_addr_t rx_ring_dma;
+
+    struct e82576_rx_buffer rx_buffer[E82576_NUM_RX_DESC];
+
+    u16 rx_next_to_clean;
 };
 
 
 /*
  * ============================================================
- * TX/RX DESCRIPTORS
+ * RX/TX DMA REGISTERS
  * ============================================================
  */
 
-#define E82576_NUM_TX_DESC 64
-#define E82576_NUM_RX_DESC 64
-#define E82576_RX_BUFFER_SIZE 2048
+#define E1000_RCTL       0x00100
+#define E1000_TCTL       0x00400
+
+#define E1000_RDBAL(_n)  (0x02800 + ((_n) * 0x100))
+#define E1000_RDBAH(_n)  (0x02804 + ((_n) * 0x100))
+#define E1000_RDLEN(_n)  (0x02808 + ((_n) * 0x100))
+#define E1000_RDH(_n)    (0x02810 + ((_n) * 0x100))
+#define E1000_RDT(_n)    (0x02818 + ((_n) * 0x100))
+#define E1000_RXDCTL(_n) (0x02828 + ((_n) * 0x100))
+
+#define E1000_TDBAL(_n)  (0x03800 + ((_n) * 0x100))
+#define E1000_TDBAH(_n)  (0x03804 + ((_n) * 0x100))
+#define E1000_TDLEN(_n)  (0x03808 + ((_n) * 0x100))
+#define E1000_TDH(_n)    (0x03810 + ((_n) * 0x100))
+#define E1000_TDT(_n)    (0x03818 + ((_n) * 0x100))
+#define E1000_TXDCTL(_n) (0x03828 + ((_n) * 0x100))
+
+
+/*
+ * Receive Control.
+ */
+
+#define E1000_RCTL_EN       BIT(1)
+#define E1000_RCTL_SBP      BIT(2)
+#define E1000_RCTL_UPE      BIT(3)
+#define E1000_RCTL_MPE      BIT(4)
+#define E1000_RCTL_LPE      BIT(5)
+#define E1000_RCTL_BAM      BIT(15)
+#define E1000_RCTL_SECRC    BIT(26)
+
+
+/*
+ * Transmit Control.
+ */
+
+#define E1000_TCTL_EN       BIT(1)
+#define E1000_TCTL_PSP      BIT(3)
+
+
+/*
+ * Queue enable.
+ */
+
+#define E1000_RXDCTL_QUEUE_ENABLE BIT(25)
+#define E1000_TXDCTL_QUEUE_ENABLE BIT(25)
+
+
+/*
+ * Legacy transmit descriptor.
+ */
+
+#define E1000_TXD_CMD_EOP   BIT(24)
+#define E1000_TXD_CMD_IFCS  BIT(25)
+#define E1000_TXD_CMD_RS    BIT(27)
+#define E1000_TXD_STAT_DD   BIT(0)
+
 
 struct e82576_tx_desc {
     __le64 buffer_addr;
@@ -267,5 +379,44 @@ static inline void e82576_flush(
 {
     e82576_read_reg(dev, E1000_STATUS);
 }
+
+/* hw */
+int e82576_reset_hw(struct e82576_device *dev);
+
+/* nvm */
+void e82576_put_hw_semaphore(struct e82576_device *dev);
+int e82576_get_hw_semaphore(struct e82576_device *dev);
+int e82576_acquire_nvm(struct e82576_device *dev);
+void e82576_release_nvm(struct e82576_device *dev);
+int e82576_read_nvm_word(struct e82576_device *dev,u16 address, u16 *data);
+int e82576_read_mac_address(struct e82576_device *dev);
+
+/* phy */
+int e82576_init_phy(struct e82576_device *dev);
+int e82576_read_phy(struct e82576_device *dev, u8 phy, u8 reg, u16 *data);
+int e82576_write_phy(struct e82576_device *dev, u8 phy, u8 reg, u16 data);
+int e82576_find_phy(struct e82576_device *dev);
+int e82576_reset_phy_hw(struct e82576_device *dev);
+int e82576_get_link_status(struct e82576_device *dev);
+int e82576_configure_phy(struct e82576_device *dev);
+int e82576_wait_for_autoneg(struct e82576_device *dev);
+void e82576_dump_phy_status(struct e82576_device *dev);
+
+/* irq */
+int e82576_init_msix(struct e82576_device *dev);
+void e82576_cleanup_msix(struct e82576_device *dev);
+
+/* tx */
+int e82576_setup_tx_ring(struct e82576_device *dev);
+void e82576_free_tx_ring(struct e82576_device *dev);
+netdev_tx_t e82576_start_xmit(struct sk_buff *skb, struct net_device *netdev);
+
+/* rx */
+int e82576_setup_rx_ring(struct e82576_device *dev);
+void e82576_free_rx_ring(struct e82576_device *dev);
+void e82576_enable_dma(struct e82576_device *dev);
+
+/* ring */
+int e82576_setup_rings(struct e82576_device *dev);
 
 #endif /* E82576_H */
