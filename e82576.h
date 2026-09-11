@@ -9,7 +9,12 @@
 #include <linux/io.h>
 #include <linux/mii.h>
 
+/*
+ * TX/RX
+*/
 #include <linux/workqueue.h>
+#include <linux/spinlock.h>
+#include <linux/dma-mapping.h>
 
 
 #define DRIVER_NAME         "e82576"
@@ -258,6 +263,10 @@ struct e82576_device {
     u16 tx_next_to_use;
     u16 tx_next_to_clean;
 
+    spinlock_t tx_lock;
+
+    struct delayed_work tx_clean_work;
+
 
     /*
      * RX ring.
@@ -410,6 +419,7 @@ void e82576_cleanup_msix(struct e82576_device *dev);
 int e82576_setup_tx_ring(struct e82576_device *dev);
 void e82576_free_tx_ring(struct e82576_device *dev);
 netdev_tx_t e82576_start_xmit(struct sk_buff *skb, struct net_device *netdev);
+void e82576_tx_clean_work(struct work_struct *work);
 
 /* rx */
 int e82576_setup_rx_ring(struct e82576_device *dev);

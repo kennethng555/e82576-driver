@@ -48,85 +48,52 @@
 static int e82576_open(
     struct net_device *netdev)
 {
-    struct e82576_device *dev =
-        netdev_priv(netdev);
+    struct e82576_device *dev = netdev_priv(netdev);
 
     int ret;
 
-    dev_info(
-        &dev->pdev->dev,
-        "Opening network interface %s\n",
-        netdev->name);
+    dev_info(&dev->pdev->dev, "Opening network interface %s\n", netdev->name);
 
 
     /*
      * Initialize DMA descriptor rings.
      */
     ret = e82576_setup_rings(dev);
-
     if (ret) {
-        dev_err(
-            &dev->pdev->dev,
-            "Failed to initialize DMA rings: %d\n",
-            ret);
-
+        dev_err(&dev->pdev->dev, "Failed to initialize DMA rings: %d\n", ret);
         return ret;
     }
-
 
     /*
      * Enable MSI-X vector 0.
      */
-    e82576_write_reg(
-        dev,
-        E1000_EIMS,
-        BIT(0));
-
+    e82576_write_reg(dev, E1000_EIMS, BIT(0));
 
     /*
      * Enable Link Status Change interrupt cause.
      */
-    e82576_write_reg(
-        dev,
-        E1000_IMS,
-        E1000_IMS_LSC);
-
+    e82576_write_reg(dev, E1000_IMS, E1000_IMS_LSC);
     e82576_flush(dev);
-
 
     ret = e82576_get_link_status(dev);
 
     if (ret) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "Unable to read PHY status: %d\n",
-            ret);
-
+        dev_err(&dev->pdev->dev, "Unable to read PHY status: %d\n", ret);
         e82576_free_rx_ring(dev);
         e82576_free_tx_ring(dev);
 
         return ret;
     }
-
-
-    /*
-     * TX queue will be enabled when we implement
-     * ndo_start_xmit().
-     */
-    netif_tx_start_all_queues(netdev);
-
-
-    if (dev->link_up)
+    
+    if (dev->link_up) {
         netif_carrier_on(netdev);
-    else
+        netif_tx_start_all_queues(netdev);
+    } else {
         netif_carrier_off(netdev);
+        netif_tx_disable(netdev);
+    }
 
-
-    dev_info(
-        &dev->pdev->dev,
-        "Interface %s opened\n",
-        netdev->name);
+    dev_info(&dev->pdev->dev, "Interface %s opened\n", netdev->name);
 
     return 0;
 }
@@ -134,54 +101,33 @@ static int e82576_open(
 static int e82576_stop(
     struct net_device *netdev)
 {
-    struct e82576_device *dev =
-        netdev_priv(netdev);
+    struct e82576_device *dev = netdev_priv(netdev);
 
-    dev_info(
-        &dev->pdev->dev,
-        "Stopping network interface %s\n",
-        netdev->name);
+    dev_info(&dev->pdev->dev, "Stopping network interface %s\n", netdev->name);
 
+    cancel_delayed_work_sync(&dev->tx_clean_work);
 
     /*
      * Stop Linux from giving us more packets.
      */
     netif_tx_disable(netdev);
-
     netif_carrier_off(netdev);
-
 
     /*
      * Disable LSC interrupt.
      */
-    e82576_write_reg(
-        dev,
-        E1000_IMC,
-        E1000_IMS_LSC);
-
+    e82576_write_reg(dev, E1000_IMC, E1000_IMS_LSC);
 
     /*
      * Disable MSI-X vector 0.
      */
-    e82576_write_reg(
-        dev,
-        E1000_EIMC,
-        BIT(0));
-
+    e82576_write_reg(dev, E1000_EIMC, BIT(0));
 
     /*
      * Stop RX/TX engines.
      */
-    e82576_write_reg(
-        dev,
-        E1000_RCTL,
-        0);
-
-    e82576_write_reg(
-        dev,
-        E1000_TCTL,
-        0);
-
+    e82576_write_reg(dev, E1000_RCTL, 0);
+    e82576_write_reg(dev, E1000_TCTL, 0);
 
     /*
      * Disable descriptor queues.
@@ -189,28 +135,20 @@ static int e82576_stop(
     e82576_write_reg(
         dev,
         E1000_RXDCTL(0),
-        e82576_read_reg(
-            dev,
-            E1000_RXDCTL(0)) &
-        ~E1000_RXDCTL_QUEUE_ENABLE);
+        e82576_read_reg(dev, E1000_RXDCTL(0)) & ~E1000_RXDCTL_QUEUE_ENABLE);
 
     e82576_write_reg(
         dev,
         E1000_TXDCTL(0),
-        e82576_read_reg(
-            dev,
-            E1000_TXDCTL(0)) &
-        ~E1000_TXDCTL_QUEUE_ENABLE);
+        e82576_read_reg(dev, E1000_TXDCTL(0)) & ~E1000_TXDCTL_QUEUE_ENABLE);
 
     e82576_flush(dev);
-
 
     /*
      * Release DMA resources.
      */
     e82576_free_rx_ring(dev);
     e82576_free_tx_ring(dev);
-
 
     return 0;
 }
@@ -244,6 +182,18 @@ static int e82576_probe(
         return ret;
     }
 
+    ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+    if (ret) {
+        dev_warn(&pdev->dev, "64-bit DMA unavailable, trying 32-bit\n");
+
+        ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+
+        if (ret) {
+            dev_err(&pdev->dev, "No usable DMA configuration\n");
+            goto err_disable_device;
+        }
+    }
+
     pci_set_master(pdev);
 
     ret = pci_request_region(pdev, 0, DRIVER_NAME);
@@ -259,6 +209,10 @@ static int e82576_probe(
     }
 
     dev = netdev_priv(netdev);
+
+    spin_lock_init(&dev->tx_lock);
+
+    INIT_DELAYED_WORK(&dev->tx_clean_work, e82576_tx_clean_work);
 
     dev->pdev = pdev;
     dev->netdev = netdev;
