@@ -177,6 +177,7 @@
 #define E82576_NUM_TX_DESC       64
 #define E82576_NUM_RX_DESC       64
 #define E82576_RX_BUFFER_SIZE    2048
+#define E82576_TX_RING_SIZE 256
 
 
 /*
@@ -278,6 +279,8 @@ struct e82576_device {
     struct e82576_rx_buffer rx_buffer[E82576_NUM_RX_DESC];
 
     u16 rx_next_to_clean;
+
+    struct delayed_work rx_poll_work;
 };
 
 
@@ -290,19 +293,20 @@ struct e82576_device {
 #define E1000_RCTL       0x00100
 #define E1000_TCTL       0x00400
 
-#define E1000_RDBAL(_n)  (0x02800 + ((_n) * 0x100))
-#define E1000_RDBAH(_n)  (0x02804 + ((_n) * 0x100))
-#define E1000_RDLEN(_n)  (0x02808 + ((_n) * 0x100))
-#define E1000_RDH(_n)    (0x02810 + ((_n) * 0x100))
-#define E1000_RDT(_n)    (0x02818 + ((_n) * 0x100))
-#define E1000_RXDCTL(_n) (0x02828 + ((_n) * 0x100))
+#define E1000_RDBAL(_n)  (0x0C000 + ((_n) * 0x40))
+#define E1000_RDBAH(_n)  (0x0C004 + ((_n) * 0x40))
+#define E1000_RDLEN(_n)  (0x0C008 + ((_n) * 0x40))
+#define E1000_SRRCTL(_n) (0x0C00C + ((_n) * 0x40))
+#define E1000_RDH(_n)    (0x0C010 + ((_n) * 0x40))
+#define E1000_RDT(_n)    (0x0C018 + ((_n) * 0x40))
+#define E1000_RXDCTL(_n) (0x0C028 + ((_n) * 0x40))
 
-#define E1000_TDBAL(_n)  (0x03800 + ((_n) * 0x100))
-#define E1000_TDBAH(_n)  (0x03804 + ((_n) * 0x100))
-#define E1000_TDLEN(_n)  (0x03808 + ((_n) * 0x100))
-#define E1000_TDH(_n)    (0x03810 + ((_n) * 0x100))
-#define E1000_TDT(_n)    (0x03818 + ((_n) * 0x100))
-#define E1000_TXDCTL(_n) (0x03828 + ((_n) * 0x100))
+#define E1000_TDBAL(_n)  (0x0E000 + ((_n) * 0x40))
+#define E1000_TDBAH(_n)  (0x0E004 + ((_n) * 0x40))
+#define E1000_TDLEN(_n)  (0x0E008 + ((_n) * 0x40))
+#define E1000_TDH(_n)    (0x0E010 + ((_n) * 0x40))
+#define E1000_TDT(_n)    (0x0E018 + ((_n) * 0x40))
+#define E1000_TXDCTL(_n) (0x0E028 + ((_n) * 0x40))
 
 
 /*
@@ -342,6 +346,20 @@ struct e82576_device {
 #define E1000_TXD_CMD_IFCS  BIT(25)
 #define E1000_TXD_CMD_RS    BIT(27)
 #define E1000_TXD_STAT_DD   BIT(0)
+
+/*
+ * RX descriptor status bits.
+ * bit 0 = DD   Descriptor Done
+ * bit 1 = EOP  End of Packet
+ * bit 2 = IXSM
+ * bit 3 = VP
+ * bit 4 = UDPCS
+ * bit 5 = TCPCS
+ * bit 6 = IPCS
+ * bit 7 = PIF
+ */
+#define E1000_RXD_STAT_DD   BIT(0)
+#define E1000_RXD_STAT_EOP  BIT(1)
 
 
 struct e82576_tx_desc {
@@ -424,6 +442,7 @@ void e82576_tx_clean_work(struct work_struct *work);
 /* rx */
 int e82576_setup_rx_ring(struct e82576_device *dev);
 void e82576_free_rx_ring(struct e82576_device *dev);
+void e82576_rx_poll_work(struct work_struct *work);
 void e82576_enable_dma(struct e82576_device *dev);
 
 /* ring */

@@ -16,11 +16,11 @@
  *   - Linux net_device registration
  *   - ndo_open()
  *   - ndo_stop()
- *
- * NOT IMPLEMENTED YET:
  *   - RX DMA
  *   - TX DMA
  *   - RX/TX descriptor rings
+ *
+ * NOT IMPLEMENTED YET:
  *   - NAPI
  *   - Packet transmission/reception
  */
@@ -64,6 +64,8 @@ static int e82576_open(
         return ret;
     }
 
+    schedule_delayed_work(&dev->rx_poll_work, msecs_to_jiffies(1));
+
     /*
      * Enable MSI-X vector 0.
      */
@@ -106,6 +108,7 @@ static int e82576_stop(
     dev_info(&dev->pdev->dev, "Stopping network interface %s\n", netdev->name);
 
     cancel_delayed_work_sync(&dev->tx_clean_work);
+    cancel_delayed_work_sync(&dev->rx_poll_work);
 
     /*
      * Stop Linux from giving us more packets.
@@ -213,6 +216,7 @@ static int e82576_probe(
     spin_lock_init(&dev->tx_lock);
 
     INIT_DELAYED_WORK(&dev->tx_clean_work, e82576_tx_clean_work);
+    INIT_DELAYED_WORK(&dev->rx_poll_work, e82576_rx_poll_work);
 
     dev->pdev = pdev;
     dev->netdev = netdev;
@@ -285,6 +289,11 @@ static int e82576_probe(
      * net_device.
      */
     netdev->netdev_ops = &e82576_netdev_ops;
+
+    dev_info(&pdev->dev,
+         "netdev_ops=%px start_xmit=%px\n",
+         netdev->netdev_ops,
+         netdev->netdev_ops->ndo_start_xmit);
 
     netif_carrier_off(netdev);
 
