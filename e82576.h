@@ -103,13 +103,17 @@
 #define E1000_GPIE      0x01514
 #define E1000_EICR      0x01580
 
-#define E1000_EICR_OTHER      BIT(31)
+#define E1000_IVAR             0x01700
+#define E1000_IVAR_MISC        0x01740
 
-#define E1000_IVAR_MISC 0x01740
+#define E1000_IVAR_VALID       BIT(7)
+#define E1000_IVAR_VECTOR(x)   ((x) + 1)
+
+#define E1000_EICR_RXQ0       BIT(0)
+#define E1000_EICR_OTHER      BIT(31)
 
 #define E1000_ICR_LSC    BIT(2)
 #define E1000_IMS_LSC    BIT(2)
-#define E1000_IVAR_VALID 0x80
 
 #define E1000_GPIE_NSICR    0x00000001
 #define E1000_GPIE_MSIX_MODE 0x00000010
@@ -178,6 +182,14 @@
 #define E82576_NUM_RX_DESC       64
 #define E82576_RX_BUFFER_SIZE    2048
 #define E82576_TX_RING_SIZE 256
+
+/*
+ * ============================================================
+ * RX MAXIMUM DMA OFFSET
+ * ============================================================
+ */
+#define E1000_DRXMXOD 0x02540
+#define E1000_DRXMXOD_MAX_BYTES_REQ_MASK 0x0fff
 
 
 /*
@@ -281,6 +293,11 @@ struct e82576_device {
     u16 rx_next_to_clean;
 
     struct delayed_work rx_poll_work;
+
+    /*
+     * NAPI.
+     */
+    struct napi_struct napi;
 };
 
 
@@ -293,20 +310,21 @@ struct e82576_device {
 #define E1000_RCTL       0x00100
 #define E1000_TCTL       0x00400
 
-#define E1000_RDBAL(_n)  (0x0C000 + ((_n) * 0x40))
-#define E1000_RDBAH(_n)  (0x0C004 + ((_n) * 0x40))
-#define E1000_RDLEN(_n)  (0x0C008 + ((_n) * 0x40))
-#define E1000_SRRCTL(_n) (0x0C00C + ((_n) * 0x40))
-#define E1000_RDH(_n)    (0x0C010 + ((_n) * 0x40))
-#define E1000_RDT(_n)    (0x0C018 + ((_n) * 0x40))
-#define E1000_RXDCTL(_n) (0x0C028 + ((_n) * 0x40))
+#define E1000_RDBAL(_n)   (0x0C000 + ((_n) * 0x40))
+#define E1000_RDBAH(_n)   (0x0C004 + ((_n) * 0x40))
+#define E1000_RDLEN(_n)   (0x0C008 + ((_n) * 0x40))
+#define E1000_SRRCTL(_n)  (0x0C00C + ((_n) * 0x40))
+#define E1000_RDH(_n)     (0x0C010 + ((_n) * 0x40))
+#define E1000_RDT(_n)     (0x0C018 + ((_n) * 0x40))
+#define E1000_RXDCTL(_n)  (0x0C028 + ((_n) * 0x40))
 
-#define E1000_TDBAL(_n)  (0x0E000 + ((_n) * 0x40))
-#define E1000_TDBAH(_n)  (0x0E004 + ((_n) * 0x40))
-#define E1000_TDLEN(_n)  (0x0E008 + ((_n) * 0x40))
-#define E1000_TDH(_n)    (0x0E010 + ((_n) * 0x40))
-#define E1000_TDT(_n)    (0x0E018 + ((_n) * 0x40))
-#define E1000_TXDCTL(_n) (0x0E028 + ((_n) * 0x40))
+#define E1000_TDBAL(_n)   (0x0E000 + ((_n) * 0x40))
+#define E1000_TDBAH(_n)   (0x0E004 + ((_n) * 0x40))
+#define E1000_TDLEN(_n)   (0x0E008 + ((_n) * 0x40))
+#define E1000_TDH(_n)     (0x0E010 + ((_n) * 0x40))
+#define E1000_TDT(_n)     (0x0E018 + ((_n) * 0x40))
+#define E1000_TXDCTL(_n)  (0x0E028 + ((_n) * 0x40))
+#define E1000_RXCTL(_n)	  (0x0C014 + ((_n) * 0x40))
 
 
 /*
@@ -360,6 +378,10 @@ struct e82576_device {
  */
 #define E1000_RXD_STAT_DD   BIT(0)
 #define E1000_RXD_STAT_EOP  BIT(1)
+
+#define E1000_SRRCTL_BSIZEPKT_SHIFT   10
+#define E1000_SRRCTL_BSIZEPKT_MASK    (0x7fU << E1000_SRRCTL_BSIZEPKT_SHIFT)
+#define E1000_SRRCTL_DESCTYPE_ADV     (1U << 25)
 
 
 struct e82576_tx_desc {
@@ -430,6 +452,7 @@ int e82576_wait_for_autoneg(struct e82576_device *dev);
 void e82576_dump_phy_status(struct e82576_device *dev);
 
 /* irq */
+void e82576_link_debug_work(struct work_struct *work);
 int e82576_init_msix(struct e82576_device *dev);
 void e82576_cleanup_msix(struct e82576_device *dev);
 
@@ -447,5 +470,8 @@ void e82576_enable_dma(struct e82576_device *dev);
 
 /* ring */
 int e82576_setup_rings(struct e82576_device *dev);
+
+/* napi */
+int e82576_poll(struct napi_struct *napi, int budget);
 
 #endif /* E82576_H */

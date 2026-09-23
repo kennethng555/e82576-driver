@@ -5,4 +5,4 @@ pkt = Ether(
     dst="00:1b:22:57:1d:64"
 ) / Raw(b"hello 82576")
 
-sendp(pkt, iface="eth0", count=1, verbose=True)
+sendp(pkt, iface="enp2s0", count=10, inter=0.1, verbose=True)
