@@ -292,28 +292,38 @@ int e82576_read_mac_address(
         dev->mac_address[i * 2 + 1] = word >> 8;
     }
 
-
     e82576_release_nvm(dev);
 
-
-    if (!is_valid_ether_addr(
-            dev->mac_address)) {
-
-        dev_err(
-            &dev->pdev->dev,
-            "Invalid MAC address %pM\n",
-            dev->mac_address);
-
-
+    if (!is_valid_ether_addr(dev->mac_address)) {
+        dev_err(&dev->pdev->dev, "Invalid MAC address %pM\n", dev->mac_address);
         return -EINVAL;
     }
 
+    /*
+     * RAR0:
+     *
+     * RAL = MAC bytes 0-3
+     * RAH = MAC bytes 4-5 + Address Valid
+     */
+    u32 ral = ((u32)dev->mac_address[0]) |
+          ((u32)dev->mac_address[1] << 8) |
+          ((u32)dev->mac_address[2] << 16) |
+          ((u32)dev->mac_address[3] << 24);
 
-    dev_info(
-        &dev->pdev->dev,
-        "MAC address: %pM\n",
-        dev->mac_address);
+    u32 rah = ((u32)dev->mac_address[4]) |
+            ((u32)dev->mac_address[5] << 8) |
+            E1000_RAH_AV;
 
+    e82576_write_reg(dev, E1000_RAL(0), ral);
+    e82576_write_reg(dev, E1000_RAH(0), rah);
+    e82576_flush(dev);
+
+    dev_info(&dev->pdev->dev,
+            "RAR0 programmed: RAL=0x%08x RAH=0x%08x\n",
+            e82576_read_reg(dev, E1000_RAL(0)),
+            e82576_read_reg(dev, E1000_RAH(0)));
+
+    dev_info(&dev->pdev->dev, "MAC address: %pM\n", dev->mac_address);
 
     return 0;
 }

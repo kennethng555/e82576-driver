@@ -51,6 +51,17 @@
 #define E1000_EERD_ADDR_SHIFT 2
 #define E1000_EERD_DATA_SHIFT 16
 
+/*
+ * ============================================================
+ * MAC Receive Address Low/High
+ * ============================================================
+ */
+#define E1000_RAL(_i)  (((_i) <= 15) ? (0x05400 + ((_i) * 8)) : \
+					(0x054E0 + ((_i - 16) * 8)))
+#define E1000_RAH(_i)  (((_i) <= 15) ? (0x05404 + ((_i) * 8)) : \
+					(0x054E4 + ((_i - 16) * 8)))
+#define E1000_RAH_AV BIT(31)
+
 
 /*
  * ============================================================
@@ -109,16 +120,21 @@
 #define E1000_IVAR_VALID       BIT(7)
 #define E1000_IVAR_VECTOR(x)   ((x) + 1)
 
-#define E1000_EICR_RXQ0       BIT(0)
+#define E1000_EICR_TXQ0       BIT(0)
+#define E1000_EICR_RXQ0       BIT(1)
 #define E1000_EICR_OTHER      BIT(31)
 
 #define E1000_ICR_LSC    BIT(2)
+#define E1000_ICR_INTA   BIT(31)
 #define E1000_IMS_LSC    BIT(2)
+#define E1000_IMS_RXDW   BIT(7)
 
-#define E1000_GPIE_NSICR    0x00000001
-#define E1000_GPIE_MSIX_MODE 0x00000010
-#define E1000_GPIE_EIAME    0x40000000
-#define E1000_GPIE_PBA      0x80000000
+#define E1000_EITR(_n)   (0x01680 + ((_n) * 4))
+
+#define E1000_GPIE_NSICR    0x00000001  // Non Selective Interrupt Clear
+#define E1000_GPIE_MSIX_MODE 0x00000010 // Multiple MSI-X
+#define E1000_GPIE_EIAME    0x40000000  // Used when EIAM is used
+#define E1000_GPIE_PBA      0x80000000  // Set in MSI-X, cleared in MSI mode
 
 #define E1000_STATUS_LU 0x00000002
 #define BMSR_LSTATUS 0x0004
@@ -298,6 +314,8 @@ struct e82576_device {
      * NAPI.
      */
     struct napi_struct napi;
+
+    bool eicr_test_done;
 };
 
 
@@ -391,12 +409,22 @@ struct e82576_tx_desc {
 };
 
 struct e82576_rx_desc {
-    __le64 buffer_addr;
-    __le16 length;
-    __le16 checksum;
-    u8 status;
-    u8 errors;
-    __le16 special;
+    union {
+        struct {
+            __le64 pkt_addr;
+            __le64 hdr_addr;
+        } read;
+
+        struct {
+            __le64 lower;
+
+            struct {
+                __le32 status_error;
+                __le16 length;
+                __le16 vlan;
+            } upper;
+        } wb;
+    };
 };
 
 
@@ -466,7 +494,7 @@ void e82576_tx_clean_work(struct work_struct *work);
 int e82576_setup_rx_ring(struct e82576_device *dev);
 void e82576_free_rx_ring(struct e82576_device *dev);
 void e82576_rx_poll_work(struct work_struct *work);
-void e82576_enable_dma(struct e82576_device *dev);
+int e82576_enable_dma(struct e82576_device *dev);
 
 /* ring */
 int e82576_setup_rings(struct e82576_device *dev);

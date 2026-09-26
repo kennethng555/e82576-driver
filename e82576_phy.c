@@ -368,6 +368,7 @@ int e82576_get_link_status(struct e82576_device *dev)
     dev_info(&dev->pdev->dev, "Speed: %d Mbps\n", speed);
     dev_info(&dev->pdev->dev, "Duplex: %s\n", full_duplex ? "Full" : "Half");
     dev_info(&dev->pdev->dev, "Autonegotiation: %s\n", autoneg ? "enabled" : "disabled");
+    dev_info(&dev->pdev->dev, "====================================\n");
 
     return 0;
 }

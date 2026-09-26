@@ -5,6 +5,8 @@ int e82576_setup_rings(
 {
     int ret;
 
+    e82576_enable_dma(dev);
+
     ret = e82576_setup_tx_ring(dev);
     if (ret)
         return ret;
@@ -14,8 +16,6 @@ int e82576_setup_rings(
         e82576_free_tx_ring(dev);
         return ret;
     }
-
-    e82576_enable_dma(dev);
 
     return 0;
 }
