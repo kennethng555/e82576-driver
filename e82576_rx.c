@@ -76,7 +76,7 @@ int e82576_setup_rx_ring(struct e82576_device *dev)
         dma_addr_t dma;
         struct e82576_rx_desc *desc;
 
-        skb = netdev_alloc_skb(dev->netdev, E82576_RX_BUFFER_SIZE);
+        skb = netdev_alloc_skb(dev->netdev, E82576_RX_MAX_FRAME_SIZE);
 
         if (!skb) {
             dev_err(&dev->pdev->dev, "Failed to allocate RX skb %d\n", i);
@@ -115,6 +115,7 @@ int e82576_setup_rx_ring(struct e82576_device *dev)
      * Hardware owns all descriptors.
      */
     dev->rx_next_to_clean = 0;
+    dev->rx_skb = NULL;
 
     /*
      * ---------------------------------------------------------
@@ -127,6 +128,12 @@ int e82576_setup_rx_ring(struct e82576_device *dev)
     e82576_write_reg(dev, E1000_RDLEN(0), size);
 
     /*
+     * Make descriptor writes visible before giving the ring
+     * to the NIC.
+     */
+    dma_wmb();
+
+    /*
      * Hardware starts at descriptor 0.
      */
     e82576_write_reg(dev, E1000_RDH(0), 0);
@@ -137,12 +144,6 @@ int e82576_setup_rx_ring(struct e82576_device *dev)
     e82576_write_reg(dev, E1000_RDT(0), E82576_NUM_RX_DESC - 1);
 
     e82576_flush(dev);
-
-    /*
-     * Make descriptor writes visible before giving the ring
-     * to the NIC.
-     */
-    dma_wmb();
 
     /*
      * ---------------------------------------------------------
@@ -215,30 +216,116 @@ void e82576_free_rx_ring(
     size_t size;
     int i;
 
-    for (i = 0; i < E82576_NUM_RX_DESC; i++) {
-
-        if (!dev->rx_buffer[i].skb)
-            continue;
-
-        dma_unmap_single(&dev->pdev->dev, dev->rx_buffer[i].dma, E82576_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
-
-        dev_kfree_skb(dev->rx_buffer[i].skb);
-
-        dev->rx_buffer[i].skb = NULL;
-        dev->rx_buffer[i].dma = 0;
+    /*
+     * Drop any packet that was being assembled from
+     * multiple RX descriptors.
+     */
+    if (dev->rx_skb) {
+        dev_kfree_skb_any(dev->rx_skb);
+        dev->rx_skb = NULL;
     }
 
-    if (!dev->rx_ring)
-        return;
+    /*
+     * Free every descriptor-owned RX buffer.
+     */
+    for (i = 0; i < E82576_NUM_RX_DESC; i++)
+        e82576_free_rx_buffer(dev, i);
 
-    size = E82576_NUM_RX_DESC * sizeof(struct e82576_rx_desc);
+    /*
+     * Free the descriptor ring.
+     */
+    if (dev->rx_ring) {
+        size =
+            E82576_NUM_RX_DESC *
+            sizeof(struct e82576_rx_desc);
 
-    dma_free_coherent(&dev->pdev->dev, size, dev->rx_ring, dev->rx_ring_dma);
+        dma_free_coherent(
+            &dev->pdev->dev,
+            size,
+            dev->rx_ring,
+            dev->rx_ring_dma);
 
-    dev->rx_ring = NULL;
-    dev->rx_ring_dma = 0;
+        dev->rx_ring = NULL;
+        dev->rx_ring_dma = 0;
+    }
 
     dev->rx_next_to_clean = 0;
+}
+
+int e82576_refill_rx_buffer(
+    struct e82576_device *dev,
+    u16 index)
+{
+    struct e82576_rx_buffer *buffer;
+    struct e82576_rx_desc *desc;
+    struct sk_buff *skb;
+    dma_addr_t dma;
+
+    buffer = &dev->rx_buffer[index];
+    desc = &dev->rx_ring[index];
+
+    /*
+     * The descriptor must not already own an skb.
+     */
+    if (buffer->skb || buffer->dma) {
+        dev_err(
+            &dev->pdev->dev,
+            "RX refill: idx=%u still has buffer\n",
+            index);
+
+        return -EINVAL;
+    }
+
+    skb = netdev_alloc_skb(
+        dev->netdev,
+        E82576_RX_MAX_FRAME_SIZE);
+
+    if (!skb) {
+        dev_err(
+            &dev->pdev->dev,
+            "RX refill: failed to allocate skb for idx=%u\n",
+            index);
+
+        return -ENOMEM;
+    }
+
+    dma = dma_map_single(
+        &dev->pdev->dev,
+        skb->data,
+        E82576_RX_BUFFER_SIZE,
+        DMA_FROM_DEVICE);
+
+    if (dma_mapping_error(
+            &dev->pdev->dev,
+            dma)) {
+
+        dev_err(
+            &dev->pdev->dev,
+            "RX refill: DMA mapping failed for idx=%u\n",
+            index);
+
+        dev_kfree_skb_any(skb);
+
+        return -ENOMEM;
+    }
+
+    buffer->skb = skb;
+    buffer->dma = dma;
+
+    /*
+     * Program the hardware descriptor.
+     */
+    desc->read.pkt_addr =
+        cpu_to_le64(dma);
+
+    desc->read.hdr_addr = 0;
+
+    /*
+     * Make descriptor writes visible to the NIC.
+     */
+    dma_wmb();
+
+    return 0;
 }
 
 // /*
@@ -423,7 +510,7 @@ int e82576_enable_dma(struct e82576_device *dev)
 
     rctl = e82576_read_reg(dev, E1000_RCTL);
 
-    rctl |= E1000_RCTL_EN;
+    rctl |= E1000_RCTL_EN | E1000_RCTL_LPE;
 
     e82576_write_reg(dev, E1000_RCTL, rctl);
     e82576_flush(dev);
@@ -511,4 +598,28 @@ int e82576_enable_dma(struct e82576_device *dev)
     dev_info(&dev->pdev->dev, "====================================\n");
 
     return 0;
+}
+
+void e82576_free_rx_buffer(
+    struct e82576_device *dev,
+    u16 index)
+{
+    struct e82576_rx_buffer *buffer;
+
+    buffer = &dev->rx_buffer[index];
+
+    if (buffer->dma) {
+        dma_unmap_single(
+            &dev->pdev->dev,
+            buffer->dma,
+            E82576_RX_BUFFER_SIZE,
+            DMA_FROM_DEVICE);
+
+        buffer->dma = 0;
+    }
+
+    if (buffer->skb) {
+        dev_kfree_skb_any(buffer->skb);
+        buffer->skb = NULL;
+    }
 }

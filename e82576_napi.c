@@ -1,198 +1,375 @@
 #include "e82576.h"
 
+static void e82576_rx_record_error(
+    struct e82576_device *dev,
+    u32 status_error,
+    u16 length)
+{
+    dev->stats.rx_errors++;
+
+    if (status_error & E1000_RXD_ERR_CE)
+        dev->stats.rx_crc_errors++;
+
+    if (status_error & E1000_RXD_ERR_RXE)
+        dev->stats.rx_fifo_errors++;
+
+    if (length == 0)
+        dev->stats.rx_length_errors++;
+}
+
 int e82576_poll(
     struct napi_struct *napi,
     int budget)
 {
-    // struct e82576_device *dev =
-    //     container_of(
-    //         napi,
-    //         struct e82576_device,
-    //         napi);
+    struct e82576_device *dev =
+        container_of(
+            napi,
+            struct e82576_device,
+            napi);
 
     int work_done = 0;
 
-    // while (work_done < budget) {
+    while (work_done < budget) {
+        u16 index;
+        struct e82576_rx_desc *desc;
+        struct e82576_rx_buffer *buffer;
+        struct sk_buff *skb;
 
-    //     u16 idx;
-    //     struct e82576_rx_desc *desc;
-    //     u8 status;
-    //     u16 length;
-    //     struct sk_buff *skb;
-    //     struct sk_buff *new_skb;
-    //     dma_addr_t new_dma;
+        u32 status_error;
+        u16 length;
 
-    //     idx = dev->rx_next_to_clean;
+        index = dev->rx_next_to_clean;
 
-    //     desc = &dev->rx_ring[idx];
+        desc = &dev->rx_ring[index];
+        buffer = &dev->rx_buffer[index];
 
-    //     status = READ_ONCE(desc->status);
+        skb = buffer->skb;
 
-    //     /*
-    //      * Hardware has not completed this descriptor.
-    //      */
-    //     if (!(status & E1000_RXD_STAT_DD))
-    //         break;
+        /*
+         * Make descriptor writes performed by the NIC
+         * visible to the CPU.
+         */
+        dma_rmb();
 
-    //     /*
-    //      * Read descriptor contents before recycling it.
-    //      */
-    //     length = le16_to_cpu(READ_ONCE(desc->length));
+        status_error =
+            le32_to_cpu(
+                *(__le32 *)((u8 *)desc + 8));
 
-    //     skb = dev->rx_buffer[idx].skb;
+        /*
+         * Hardware has not completed this descriptor.
+         */
+        if (!(status_error & E1000_RXD_STAT_DD))
+            break;
 
-    //     dev_info(
-    //         &dev->pdev->dev,
-    //         "RX PACKET: idx=%u status=0x%02x length=%u\n",
-    //         idx,
-    //         status,
-    //         length);
+        length =
+            le16_to_cpu(
+                *(__le16 *)((u8 *)desc + 12));
 
-    //     /*
-    //      * Remove the DMA mapping from the buffer
-    //      * that is being handed to Linux.
-    //      */
-    //     dma_unmap_single(
-    //         &dev->pdev->dev,
-    //         dev->rx_buffer[idx].dma,
-    //         E82576_RX_BUFFER_SIZE,
-    //         DMA_FROM_DEVICE);
+        // dev_info(
+        //     &dev->pdev->dev,
+        //     "RX: idx=%u DD=%u EOP=%u len=%u\n",
+        //     index,
+        //     !!(status_error & E1000_RXD_STAT_DD),
+        //     !!(status_error & E1000_RXD_STAT_EOP),
+        //     length);
 
-    //     /*
-    //      * Tell the skb how much packet data it contains.
-    //      */
-    //     skb_put(
-    //         skb,
-    //         length);
+        /*
+         * We no longer need the DMA mapping because
+         * hardware has finished writing this buffer.
+         */
+        dma_unmap_single(
+            &dev->pdev->dev,
+            buffer->dma,
+            E82576_RX_BUFFER_SIZE,
+            DMA_FROM_DEVICE);
 
-    //     /*
-    //      * Determine the Ethernet protocol.
-    //      */
-    //     skb->protocol =
-    //         eth_type_trans(
-    //             skb,
-    //             dev->netdev);
+        buffer->dma = 0;
 
-    //     /*
-    //      * Give the packet to the Linux networking stack.
-    //      */
-    //     netif_receive_skb(skb);
+        /*
+         * Sanity check.
+         */
+        if (!skb) {
+            dev_err(
+                &dev->pdev->dev,
+                "NAPI RX: idx=%u has no skb\n",
+                index);
 
-    //     /*
-    //      * Allocate a replacement buffer.
-    //      */
-    //     new_skb =
-    //         netdev_alloc_skb(
-    //             dev->netdev,
-    //             E82576_RX_BUFFER_SIZE);
+            dev->stats.rx_dropped++;
 
-    //     if (!new_skb) {
+            /*
+             * Refill the descriptor before returning
+             * ownership to hardware.
+             */
+            if (e82576_refill_rx_buffer(dev, index)) {
+                dev_err(
+                    &dev->pdev->dev,
+                    "RX refill failed: idx=%u\n",
+                    index);
+                break;
+            }
 
-    //         dev_err(
-    //             &dev->pdev->dev,
-    //             "RX skb allocation failed at idx=%u\n",
-    //             idx);
+            e82576_write_reg(
+                dev,
+                E1000_RDT(0),
+                index);
 
-    //         break;
-    //     }
+            dev->rx_next_to_clean++;
 
-    //     /*
-    //      * Map replacement buffer for DMA.
-    //      */
-    //     new_dma =
-    //         dma_map_single(
-    //             &dev->pdev->dev,
-    //             new_skb->data,
-    //             E82576_RX_BUFFER_SIZE,
-    //             DMA_FROM_DEVICE);
+            if (dev->rx_next_to_clean ==
+                E82576_NUM_RX_DESC)
+                dev->rx_next_to_clean = 0;
 
-    //     if (dma_mapping_error(
-    //             &dev->pdev->dev,
-    //             new_dma)) {
+            work_done++;
 
-    //         dev_err(
-    //             &dev->pdev->dev,
-    //             "RX DMA mapping failed at idx=%u\n",
-    //             idx);
+            continue;
+        }
 
-    //         dev_kfree_skb(new_skb);
+        /*
+         * Handle RX errors.
+         */
+        if (status_error & E1000_RXD_ERR_RXE) {
 
-    //         break;
-    //     }
+            e82576_rx_record_error(
+                dev,
+                status_error,
+                length);
 
-    //     /*
-    //      * Install replacement buffer.
-    //      */
-    //     dev->rx_buffer[idx].skb =
-    //         new_skb;
+            /*
+             * Drop any partially assembled packet.
+             */
+            if (dev->rx_skb) {
+                dev_kfree_skb_any(dev->rx_skb);
+                dev->rx_skb = NULL;
+            }
 
-    //     dev->rx_buffer[idx].dma =
-    //         new_dma;
+            /*
+             * Drop the current descriptor's skb.
+             */
+            dev_kfree_skb_any(skb);
+            buffer->skb = NULL;
 
-    //     /*
-    //      * Give hardware the replacement buffer.
-    //      */
-    //     desc->buffer_addr =
-    //         cpu_to_le64(new_dma);
+            /*
+             * Give the descriptor a new buffer.
+             */
+            if (e82576_refill_rx_buffer(dev, index)) {
+                dev_err(
+                    &dev->pdev->dev,
+                    "RX refill failed after error: idx=%u\n",
+                    index);
+                break;
+            }
 
-    //     /*
-    //      * Clear descriptor writeback fields.
-    //      */
-    //     desc->length = 0;
-    //     desc->checksum = 0;
-    //     desc->status = 0;
-    //     desc->errors = 0;
-    //     desc->special = 0;
+            /*
+             * Return descriptor ownership to hardware.
+             */
+            e82576_write_reg(
+                dev,
+                E1000_RDT(0),
+                index);
 
-    //     /*
-    //      * Ensure descriptor contents are visible
-    //      * before returning ownership to hardware.
-    //      */
-    //     dma_wmb();
+            dev->rx_next_to_clean++;
 
-    //     /*
-    //      * Return descriptor to hardware.
-    //      */
-    //     e82576_write_reg(
-    //         dev,
-    //         E1000_RDT(0),
-    //         idx);
+            if (dev->rx_next_to_clean ==
+                E82576_NUM_RX_DESC)
+                dev->rx_next_to_clean = 0;
 
-    //     /*
-    //      * Move to next descriptor.
-    //      */
-    //     dev->rx_next_to_clean =
-    //         (idx + 1) %
-    //         E82576_NUM_RX_DESC;
+            work_done++;
 
-    //     work_done++;
-    // }
+            continue;
+        }
 
-    // /*
-    //  * We processed fewer packets than the budget,
-    //  * so the RX ring is currently drained.
-    //  */
-    // if (work_done < budget) {
+        /*
+         * ----------------------------------------------------
+         * Packet assembly
+         * ----------------------------------------------------
+         *
+         * The first descriptor's skb becomes the packet skb.
+         * Subsequent descriptors are copied into it.
+         */
+        if (!dev->rx_skb) {
 
-    //     /*
-    //      * Complete the NAPI cycle.
-    //      */
-    //     if (napi_complete_done(napi, work_done)) {
+            /*
+             * First fragment of a new packet.
+             */
+            dev->rx_skb = skb;
+            buffer->skb = NULL;
 
-    //         /*
-    //          * Re-enable MSI-X vector 0.
-    //          *
-    //          * RX queue 0 and OTHER currently share
-    //          * this vector.
-    //          */
-    //         e82576_write_reg(
-    //             dev,
-    //             E1000_EIMS,
-    //             BIT(0));
+            /*
+             * Add this fragment to the packet.
+             */
+            skb_put(
+                dev->rx_skb,
+                length);
 
-    //         e82576_flush(dev);
-    //     }
-    // }
+        } else {
+
+            /*
+             * Subsequent fragment.
+             */
+            if (skb_tailroom(dev->rx_skb) < length) {
+
+                dev_err(
+                    &dev->pdev->dev,
+                    "RX packet too large: "
+                    "idx=%u len=%u tailroom=%u\n",
+                    index,
+                    length,
+                    skb_tailroom(dev->rx_skb));
+
+                dev->stats.rx_length_errors++;
+
+                /*
+                 * Drop the packet being assembled.
+                 */
+                dev_kfree_skb_any(dev->rx_skb);
+                dev->rx_skb = NULL;
+
+                /*
+                 * Drop the current fragment skb.
+                 */
+                dev_kfree_skb_any(skb);
+                buffer->skb = NULL;
+
+                /*
+                 * Refill this descriptor.
+                 */
+                if (e82576_refill_rx_buffer(dev, index)) {
+                    dev_err(
+                        &dev->pdev->dev,
+                        "RX refill failed: idx=%u\n",
+                        index);
+                    break;
+                }
+
+                /*
+                 * Return descriptor ownership to hardware.
+                 */
+                e82576_write_reg(
+                    dev,
+                    E1000_RDT(0),
+                    index);
+
+                dev->rx_next_to_clean++;
+
+                if (dev->rx_next_to_clean ==
+                    E82576_NUM_RX_DESC)
+                    dev->rx_next_to_clean = 0;
+
+                work_done++;
+
+                continue;
+            }
+
+            /*
+             * Append the fragment.
+             */
+            memcpy(
+                skb_put(
+                    dev->rx_skb,
+                    length),
+                skb->data,
+                length);
+
+            /*
+             * This descriptor's skb is no longer
+             * needed after its data has been copied.
+             */
+            dev_kfree_skb_any(skb);
+            buffer->skb = NULL;
+        }
+
+        /*
+         * Give this descriptor a fresh DMA buffer.
+         */
+        if (e82576_refill_rx_buffer(dev, index)) {
+            dev_err(
+                &dev->pdev->dev,
+                "RX refill failed: idx=%u\n",
+                index);
+
+            /*
+             * The descriptor is not returned to hardware.
+             */
+            break;
+        }
+
+        /*
+         * Return descriptor ownership to hardware.
+         */
+        e82576_write_reg(
+            dev,
+            E1000_RDT(0),
+            index);
+
+        /*
+         * Advance to the next descriptor.
+         */
+        dev->rx_next_to_clean++;
+
+        if (dev->rx_next_to_clean ==
+            E82576_NUM_RX_DESC)
+            dev->rx_next_to_clean = 0;
+
+        work_done++;
+
+        /*
+         * ----------------------------------------------------
+         * EOP
+         * ----------------------------------------------------
+         *
+         * EOP means this descriptor contains the final
+         * fragment of the current packet.
+         */
+        if (status_error & E1000_RXD_STAT_EOP) {
+            struct sk_buff *packet;
+
+            packet = dev->rx_skb;
+            dev->rx_skb = NULL;
+
+            /*
+             * Set the Ethernet protocol.
+             */
+            packet->protocol =
+                eth_type_trans(
+                    packet,
+                    dev->netdev);
+
+            /*
+             * Hardware checksum verification is not
+             * implemented yet.
+             */
+            packet->ip_summed = CHECKSUM_NONE;
+
+            /*
+             * Hand the complete packet to GRO.
+             */
+            napi_gro_receive(
+                napi,
+                packet);
+
+            /*
+             * Driver statistics.
+             */
+            dev->stats.rx_packets++;
+            dev->stats.rx_bytes += packet->len;
+        }
+    }
+
+    /*
+     * If we processed everything available, complete
+     * the NAPI poll and re-enable RX interrupts.
+     */
+    if (work_done < budget) {
+
+        napi_complete_done(
+            napi,
+            work_done);
+
+        e82576_write_reg(
+            dev,
+            E1000_EIMS,
+            E1000_EICR_RXQ0);
+    }
 
     return work_done;
 }

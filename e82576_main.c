@@ -42,6 +42,21 @@
 
 /*
  * ============================================================
+ * GET STATUS
+ * ============================================================
+ */
+static void e82576_get_stats64(
+    struct net_device *netdev,
+    struct rtnl_link_stats64 *stats)
+{
+    struct e82576_device *dev =
+        netdev_priv(netdev);
+
+    *stats = dev->stats;
+}
+
+/*
+ * ============================================================
  * NET DEVICE
  * ============================================================
  */
@@ -119,7 +134,7 @@ static int e82576_open(
      * Enable NAPI before RX DMA starts.
      * --------------------------------------------------------
      */
-    // napi_enable(&dev->napi);
+    napi_enable(&dev->napi);
 
     /*
      * --------------------------------------------------------
@@ -134,7 +149,7 @@ static int e82576_open(
         /*
          * Disable NAPI before freeing RX resources.
          */
-        // napi_disable(&dev->napi);
+        napi_disable(&dev->napi);
 
         goto err_free_rings;
     }
@@ -155,18 +170,6 @@ static int e82576_open(
     dev_info(&dev->pdev->dev, "Interface %s opened\n", netdev->name);
 
     // schedule_delayed_work(&dev->rx_poll_work, msecs_to_jiffies(500));
-
-    u32 eicr;
-    u32 eims;
-
-    eicr = e82576_read_reg(dev, E1000_EICR);
-    eims = e82576_read_reg(dev, E1000_EIMS);
-
-    dev_info(&dev->pdev->dev, "BEFORE EICS: EICR=0x%08x EIMS=0x%08x", eicr, eims);
-    dev_info(&dev->pdev->dev, "TEST: triggering software RXQ0 interrupt\n");
-
-    e82576_write_reg(dev, E1000_EICS, 0x00000001);
-    e82576_flush(dev);
 
     return 0;
 
@@ -195,7 +198,7 @@ static int e82576_stop(
      * Disable NAPI.
      * --------------------------------------------------------
      */
-    // napi_disable(&dev->napi);
+    napi_disable(&dev->napi);
 
     /*
      * --------------------------------------------------------
@@ -209,8 +212,16 @@ static int e82576_stop(
      * Stop RX/TX engines.
      * --------------------------------------------------------
      */
-    e82576_write_reg(dev, E1000_RCTL, 0);
-    e82576_write_reg(dev, E1000_TCTL, 0);
+
+    /*
+     * Disable packet reception.
+     */
+    e82576_write_reg(dev, E1000_RCTL, e82576_read_reg(dev, E1000_RCTL) & ~E1000_RCTL_EN);
+
+    /*
+     * Disable transmission.
+     */
+    e82576_write_reg(dev, E1000_TCTL, e82576_read_reg(dev, E1000_TCTL) & ~E1000_TCTL_EN);
 
     /*
      * Disable RX descriptor queue.
@@ -223,8 +234,9 @@ static int e82576_stop(
     e82576_write_reg(dev, E1000_TXDCTL(0), e82576_read_reg(dev, E1000_TXDCTL(0)) & ~E1000_TXDCTL_QUEUE_ENABLE);
     e82576_flush(dev);
 
-    // cancel_delayed_work_sync(&dev->rx_poll_work);
-
+    /*
+     * Drain pending interrupt causes.
+     */
     e82576_read_reg(dev, E1000_EICR);
     e82576_read_reg(dev, E1000_ICR);
 
@@ -242,11 +254,11 @@ static int e82576_stop(
 }
 
 
-static const struct net_device_ops e82576_netdev_ops =
-{
+static const struct net_device_ops e82576_netdev_ops = {
     .ndo_open       = e82576_open,
     .ndo_stop       = e82576_stop,
     .ndo_start_xmit = e82576_start_xmit,
+    .ndo_get_stats64 = e82576_get_stats64,
 };
 
 
@@ -364,7 +376,7 @@ static int e82576_probe(
      * Register NAPI.
      * --------------------------------------------------------
      */
-    // netif_napi_add(netdev, &dev->napi, e82576_poll);
+    netif_napi_add(netdev, &dev->napi, e82576_poll);
 
     /*
      * --------------------------------------------------------
@@ -474,40 +486,23 @@ static int e82576_probe(
 
 
 err_msix:
-
-    e82576_cleanup_msix(
-        dev);
+    e82576_cleanup_msix(dev);
 
 err_unmap:
-
     if (dev->hw_addr) {
-
-        pci_iounmap(
-            pdev,
-            dev->hw_addr);
-
+        pci_iounmap(pdev, dev->hw_addr);
         dev->hw_addr = NULL;
     }
 
 err_free_netdev:
-
-    free_netdev(
-        netdev);
+    free_netdev(netdev);
 
 err_release_region:
-
-    pci_release_region(
-        pdev,
-        0);
+    pci_release_region(pdev, 0);
 
 err_disable_device:
-
-    pci_clear_master(
-        pdev);
-
-    pci_disable_device(
-        pdev);
-
+    pci_clear_master(pdev);
+    pci_disable_device(pdev);
     return ret;
 }
 
@@ -522,22 +517,17 @@ static void e82576_remove(
 {
     struct e82576_device *dev;
 
-    dev = pci_get_drvdata(
-        pdev);
-
+    dev = pci_get_drvdata(pdev);
     if (!dev)
         return;
 
-    dev_info(
-        &pdev->dev,
-        "Removing e82576\n");
+    dev_info(&pdev->dev, "Removing e82576\n");
 
     /*
      * unregister_netdev() calls ndo_stop() if the interface
      * is currently up.
      */
-    unregister_netdev(
-        dev->netdev);
+    unregister_netdev(dev->netdev);
 
     /*
      * Stop the periodic debug worker.
@@ -547,41 +537,22 @@ static void e82576_remove(
     /*
      * Remove MSI-X handler.
      */
-    e82576_cleanup_msix(
-        dev);
+    e82576_cleanup_msix(dev);
 
     /*
      * Unmap BAR0.
      */
     if (dev->hw_addr) {
-
-        pci_iounmap(
-            pdev,
-            dev->hw_addr);
-
+        pci_iounmap(pdev, dev->hw_addr);
         dev->hw_addr = NULL;
     }
 
-    pci_release_region(
-        pdev,
-        0);
-
-    pci_clear_master(
-        pdev);
-
-    pci_disable_device(
-        pdev);
-
-    free_netdev(
-        dev->netdev);
-
-    pci_set_drvdata(
-        pdev,
-        NULL);
-
-    dev_info(
-        &pdev->dev,
-        "e82576 removed\n");
+    pci_release_region(pdev, 0);
+    pci_clear_master(pdev);
+    pci_disable_device(pdev);
+    free_netdev(dev->netdev);
+    pci_set_drvdata(pdev, NULL);
+    dev_info(&pdev->dev, "e82576 removed\n");
 }
 
 
@@ -603,9 +574,7 @@ static const struct pci_device_id e82576_pci_ids[] =
     }
 };
 
-MODULE_DEVICE_TABLE(
-    pci,
-    e82576_pci_ids);
+MODULE_DEVICE_TABLE(pci, e82576_pci_ids);
 
 
 /*
@@ -622,17 +591,8 @@ static struct pci_driver e82576_driver =
 };
 
 
-module_pci_driver(
-    e82576_driver);
-
-MODULE_AUTHOR(
-    "Custom 82576 Driver Development");
-
-MODULE_DESCRIPTION(
-    "Minimal Intel 82576 Ethernet driver");
-
-MODULE_LICENSE(
-    "GPL");
-
-MODULE_VERSION(
-    DRIVER_VERSION);
+module_pci_driver(e82576_driver);
+MODULE_AUTHOR("Custom 82576 Driver Development");
+MODULE_DESCRIPTION("Minimal Intel 82576 Ethernet driver");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(DRIVER_VERSION);

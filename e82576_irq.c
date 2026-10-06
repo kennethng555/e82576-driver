@@ -217,21 +217,17 @@ static irqreturn_t e82576_msix_handler(
      * RX processing is deferred to NAPI.
      */
     if (eicr & E1000_EICR_RXQ0) {
-        dev_info(&dev->pdev->dev, "MSI-X RX: queue 0\n");
+        /*
+        * Mask RXQ0 while NAPI drains the RX ring.
+        */
+        e82576_write_reg(dev, E1000_EIMC, E1000_EICR_RXQ0);
 
-        // /*
-        //  * Mask MSI-X vector 0 while NAPI processes
-        //  * the RX ring.
-        //  *
-        //  * RXQ0 and OTHER currently share this vector.
-        //  */
-        // e82576_write_reg(dev, E1000_EIMC, BIT(0));
+        dev_info(&dev->pdev->dev, "RXQ0 masked: EIMS=0x%08x\n", e82576_read_reg(dev, E1000_EIMS));
 
-        // /*
-        //  * Schedule NAPI.
-        //  */
-        // if (napi_schedule_prep(&dev->napi))
-        //     __napi_schedule(&dev->napi);
+        /*
+        * NAPI is now responsible for processing RX packets.
+        */
+        napi_schedule_irqoff(&dev->napi);
     }
 
     /*
